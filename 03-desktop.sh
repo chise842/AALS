@@ -97,8 +97,53 @@ install_kernel() {
     packages+=(linux-firmware-amdgpu)
   fi
   sudo pacman -S --needed "${packages[@]}"
+  if [[ "$GPU" == nvidia ]]; then
+    add_mkinitcpio_module nvidia
+    add_mkinitcpio_module nvidia_modeset
+    add_mkinitcpio_module nvidia_uvm
+    add_mkinitcpio_module nvidia_drm
+    point_arch_preset_away_from_nvidia_modules
+  fi
   sudo mkinitcpio -P
   ensure_btrfs_in_initramfs
+}
+
+point_arch_preset_away_from_nvidia_modules() {
+  local preset=/etc/mkinitcpio.d/linux.preset line modules m
+  local -a kept=()
+  [[ -f "$preset" && -f /etc/mkinitcpio.conf ]] || die "linux の mkinitcpio preset がありません。"
+  line=$(grep -E '^MODULES=' /etc/mkinitcpio.conf)
+  modules=${line#MODULES=(}
+  modules=${modules%)}
+  for m in $modules; do
+    case "$m" in
+      nvidia | nvidia_modeset | nvidia_uvm | nvidia_drm) ;;
+      *) kept+=("$m") ;;
+    esac
+  done
+  awk -v repl="MODULES=(${kept[*]})" '
+    /^MODULES=/ { print repl; next }
+    { print }
+  ' /etc/mkinitcpio.conf | sudo tee /etc/mkinitcpio.linux.conf >/dev/null
+  sudo chmod 644 /etc/mkinitcpio.linux.conf
+  sudo sed -i -E \
+    -e 's|^[[:space:]]*#?ALL_config=.*|ALL_config="/etc/mkinitcpio.linux.conf"|' \
+    -e 's|^default_config=.*|default_config="/etc/mkinitcpio.linux.conf"|' \
+    -e 's|^fallback_config=.*|fallback_config="/etc/mkinitcpio.linux.conf"|' \
+    "$preset"
+}
+
+add_mkinitcpio_module() {
+  local module=$1
+  if grep -Eq "^MODULES=\\(.*\\b${module}\\b" /etc/mkinitcpio.conf; then
+    return 0
+  fi
+  if grep -Eq '^MODULES=\([[:space:]]*\)$' /etc/mkinitcpio.conf; then
+    sudo sed -i -E "s/^MODULES=\\([[:space:]]*\\)\$/MODULES=(${module})/" /etc/mkinitcpio.conf
+  else
+    sudo sed -i -E "s/^MODULES=\\(([^)]*)\\)/MODULES=(\\1 ${module})/" /etc/mkinitcpio.conf
+  fi
+  grep -Eq "^MODULES=\\(.*\\b${module}\\b" /etc/mkinitcpio.conf || die "mkinitcpio.conf に ${module} を追加できません。"
 }
 
 ensure_btrfs_in_initramfs() {
@@ -106,8 +151,7 @@ ensure_btrfs_in_initramfs() {
   if initramfs_has_btrfs "$image"; then
     return 0
   fi
-  grep -Eq '^MODULES=\([[:space:]]*\)$' /etc/mkinitcpio.conf || die "initramfs に btrfs モジュールがありません。"
-  sudo sed -i -E 's/^MODULES=\([[:space:]]*\)$/MODULES=(btrfs)/' /etc/mkinitcpio.conf
+  add_mkinitcpio_module btrfs
   sudo mkinitcpio -P
   initramfs_has_btrfs "$image" || die "initramfs に btrfs モジュールがありません。"
 }
@@ -120,7 +164,7 @@ initramfs_has_btrfs() {
 }
 
 deploy_limine() {
-  local root_uuid efi=/usr/share/limine/BOOTX64.EFI cmdline machine_id
+  local root_uuid efi=/usr/share/limine/BOOTX64.EFI cmdline cachyos_cmdline machine_id
   root_uuid=$(findmnt -no UUID /)
   [[ -n "$root_uuid" ]] || die "ルートの UUID を取得できません。"
   [[ -f "$efi" && -f /boot/EFI/BOOT/BOOTX64.EFI ]] || die "Limine の EFI バイナリがありません。"
@@ -128,6 +172,10 @@ deploy_limine() {
   machine_id=$(tr -d '[:space:]' </etc/machine-id)
   [[ "$machine_id" =~ ^[a-f0-9]{32}$ ]] || die "machine-id が不正です。"
   cmdline="root=UUID=${root_uuid} rw rootflags=subvol=@"
+  cachyos_cmdline=$cmdline
+  if [[ "$GPU" == nvidia ]]; then
+    cachyos_cmdline+=" nvidia-drm.modeset=1"
+  fi
   sudo rm -f /boot/EFI/BOOT/limine.conf
   sudo tee /boot/limine.conf >/dev/null <<EOF
 timeout: 5
@@ -139,13 +187,13 @@ comment: machine-id=${machine_id}
   protocol: linux
   kernel_path: boot():/vmlinuz-linux-cachyos
   module_path: boot():/initramfs-linux-cachyos.img
-  kernel_cmdline: ${cmdline}
+  kernel_cmdline: ${cachyos_cmdline}
 
   //linux-cachyos (fallback)
   protocol: linux
   kernel_path: boot():/vmlinuz-linux-cachyos
   module_path: boot():/initramfs-linux-cachyos-fallback.img
-  kernel_cmdline: ${cmdline}
+  kernel_cmdline: ${cachyos_cmdline}
 
   //Snapshots
 EOF
@@ -210,6 +258,26 @@ EOF
   sudo systemctl enable greetd.service
 }
 
+install_session() {
+  printf 'ターミナル、シェル、ランチャー、音声、Bluetooth、フォント、fcitx5 を入れます。確認が出たら応答してください。\n'
+  sudo pacman -S --needed \
+    kitty \
+    zsh \
+    wofi \
+    pipewire \
+    wireplumber \
+    pipewire-alsa \
+    pipewire-pulse \
+    pipewire-jack \
+    bluez \
+    bluez-utils \
+    noto-fonts-cjk \
+    fcitx5
+  sudo usermod -s /bin/zsh "$(id -un)"
+  sudo systemctl enable bluetooth.service
+  sudo systemctl --global enable pipewire.service pipewire-pulse.service wireplumber.service
+}
+
 main() {
   assert_environment
   load_hardware
@@ -218,6 +286,7 @@ main() {
   install_kernel
   deploy_limine
   install_desktop
+  install_session
   install_paru
   install_limine_snapper_sync
   printf 'ユーザ設定ファイルは作りません。再起動すると greetd が Hyprland を起動し、既定のカーネルは linux-cachyos です。\n'

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Live ISO の root で実行する。
+# Live ISO の root で、次で取得して実行する。
+#   curl -fsSL https://raw.githubusercontent.com/chise842/AALS/main/01-base.sh | bash
+# このスクリプトは同じリポジトリの 02 と 03 を取得してから実行する。
 # パーティション、ファイルシステム、pacstrap、fstab までを行い、
 # arch-chroot で 02-base-chroot.sh に渡す。NVRAM 登録は ISO 側の efibootmgr で行う。
 # ここまでが素のベース OS。デスクトップと CachyOS リポジトリは起動後に 03-desktop.sh。
@@ -12,7 +14,8 @@ set -euo pipefail
 
 MIN_ESP_MIB=4096
 MIN_ROOT_BYTES=$((8 * 1024 * 1024 * 1024))
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_RAW=https://raw.githubusercontent.com/chise842/AALS/main
+SCRIPT_DIR=${AALS_SCRIPT_DIR:-}
 
 DISK=
 ESP_MIB=
@@ -121,11 +124,36 @@ unmount_disk() {
   done
 }
 
+fetch_setup_scripts() {
+  local dest name src dir
+  if [[ "${AALS_FROM_REPO:-}" == 1 ]]; then
+    return 0
+  fi
+  src=${BASH_SOURCE[0]}
+  if [[ -n "$src" && -f "$src" ]]; then
+    dir=$(cd "$(dirname "$src")" && pwd)
+    if [[ -f "${dir}/02-base-chroot.sh" && -f "${dir}/03-desktop.sh" ]]; then
+      SCRIPT_DIR=$dir
+      return 0
+    fi
+  fi
+  dest=$(mktemp -d)
+  printf 'https://github.com/chise842/AALS からスクリプトを取得しています。\n'
+  for name in 01-base.sh 02-base-chroot.sh 03-desktop.sh; do
+    curl -fsSL --max-time 60 -o "${dest}/${name}" "${REPO_RAW}/${name}" \
+      || die "取得できません: ${name}"
+    [[ "$(head -n 1 "${dest}/${name}")" == '#!/usr/bin/env bash' ]] || die "取得した ${name} がスクリプトではありません。"
+  done
+  chmod 755 "${dest}/01-base.sh" "${dest}/03-desktop.sh"
+  chmod 700 "${dest}/02-base-chroot.sh"
+  AALS_FROM_REPO=1 AALS_SCRIPT_DIR=$dest exec bash "${dest}/01-base.sh" "$@"
+}
+
 preflight() {
   [[ "$(id -u)" -eq 0 ]] || die "root で実行してください。"
   [[ -d /run/archiso ]] || die "Arch Linux のインストール ISO から実行してください。"
   [[ -d /sys/firmware/efi ]] || die "UEFI で起動した ISO から実行してください。"
-  [[ -f "${SCRIPT_DIR}/02-base-chroot.sh" && -f "${SCRIPT_DIR}/03-desktop.sh" ]] || die "02-base-chroot.sh と 03-desktop.sh を同じディレクトリに置いてください。"
+  [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/02-base-chroot.sh" && -f "${SCRIPT_DIR}/03-desktop.sh" ]] || die "セットアップスクリプトを取得できていません。"
   if findmnt -M /mnt >/dev/null 2>&1; then
     die "/mnt は既にマウントされています。01 を最初からやり直すならアンマウントしてください。設定だけなら arch-chroot /mnt /root/aals/02-base-chroot.sh です。"
   fi
@@ -195,7 +223,8 @@ confirm_wipe() {
   cat <<EOF
 
   ESP: ${ESP_MIB} MiB（/boot、FAT32、スナップショットのカーネル用に 4096 MiB 以上）
-  ルート: 残り全域（Btrfs、サブボリューム @、@home、@snapshots、暗号化なし、スワップなし）
+  ルート: 残り全域（Btrfs、サブボリューム @、@home、@snapshots、暗号化なし）
+  スワップ: パーティションなし。ZRAM（メモリの半分、最大 4 GiB）
   ネットワーク: systemd-networkd + iwd + systemd-resolved
   ホスト名: ${HOST_NAME}
   ユーザー: ${USER_NAME}（wheel / sudo）
@@ -322,6 +351,7 @@ register_limine_boot_entry() {
 }
 
 main() {
+  fetch_setup_scripts "$@"
   preflight
   ask_inputs
   confirm_wipe

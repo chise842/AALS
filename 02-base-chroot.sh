@@ -111,7 +111,7 @@ load_or_ask_settings() {
 }
 
 configure_system() {
-  local locale_re root_uuid
+  local locale_re root_uuid user_shell=/bin/bash
   printf '新システム内の root として設定しています。\n'
 
   ln -sfn "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
@@ -133,10 +133,13 @@ configure_system() {
 127.0.1.1 ${HOST_NAME}.localdomain ${HOST_NAME}
 EOF
 
+  if [[ -x /bin/zsh ]]; then
+    user_shell=/bin/zsh
+  fi
   if id "$USER_NAME" >/dev/null 2>&1; then
-    usermod -aG wheel -s /bin/bash "$USER_NAME"
+    usermod -aG wheel -s "$user_shell" "$USER_NAME"
   else
-    useradd -m -G wheel -s /bin/bash "$USER_NAME"
+    useradd -m -G wheel -s "$user_shell" "$USER_NAME"
   fi
   printf '%s:%s\n' root "$ROOT_PASSWORD" | chpasswd
   printf '%s:%s\n' "$USER_NAME" "$USER_PASSWORD" | chpasswd
@@ -149,9 +152,10 @@ EOF
   printf 'CPU=%q\nGPU=%q\n' "$CPU" "$GPU" >/etc/aals/hardware
   chmod 644 /etc/aals/hardware
 
-  pacman -S --noconfirm --needed iwd snapper
+  pacman -S --noconfirm --needed iwd snapper zram-generator
   configure_network
   configure_snapper
+  configure_zram
 
   mkinitcpio -P
   ensure_btrfs_in_initramfs
@@ -210,6 +214,15 @@ configure_snapper() {
   findmnt -M /.snapshots >/dev/null || die "/.snapshots がマウントされていません。"
   chmod 750 /.snapshots
   systemctl enable snapper-timeline.timer snapper-cleanup.timer
+}
+
+configure_zram() {
+  printf 'ZRAM を設定しています。\n'
+  install -d -m 755 /etc/systemd
+  cat >/etc/systemd/zram-generator.conf <<'EOF'
+[zram0]
+EOF
+  chmod 644 /etc/systemd/zram-generator.conf
 }
 
 configure_resolved_symlink() {
@@ -280,7 +293,7 @@ main() {
   rm -f "$ENV_FILE"
   unset ROOT_PASSWORD USER_PASSWORD
   sync
-  printf 'ベース OS の設定が完了しました。再起動してください。\n'
+  printf 'ベース OS の設定が完了しました。ZRAM は再起動後に有効になります。\n'
   printf '有線は DHCP で接続します。無線は iwctl で接続してから、一般ユーザーで %s を実行してください。\n' "$DESKTOP_SCRIPT"
 }
 
