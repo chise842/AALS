@@ -78,8 +78,9 @@ validate_settings() {
   esac
   [[ -n "$ROOT_PASSWORD" && "$ROOT_PASSWORD" != *$'\n'* ]] || die "Invalid root password."
   [[ -n "$USER_PASSWORD" && "$USER_PASSWORD" != *$'\n'* ]] || die "Invalid user password."
+  [[ -n "$LOCALE" ]] || LOCALE=en_US.UTF-8
   [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "Invalid locale."
-  grep -Eq "^#?${LOCALE//./\\.} UTF-8$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
+  grep -Eq "^#?${LOCALE//./\\.}[[:space:]]+UTF-8[[:space:]]*$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
   [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "Timezone not found: ${TIMEZONE}"
   [[ "$KEYMAP" =~ ^[A-Za-z0-9_-]+$ ]] || die "Invalid keymap."
   keymap_path=$(find /usr/share/kbd/keymaps -type f -name "${KEYMAP}.map.gz" -print -quit)
@@ -97,7 +98,7 @@ load_or_ask_settings() {
     prompt USER_NAME 'Username: '
     prompt_secret ROOT_PASSWORD 'Root password: '
     prompt_secret USER_PASSWORD "Password for ${USER_NAME}: "
-    prompt LOCALE 'Locale (example: en_US.UTF-8): '
+    prompt LOCALE 'Locale [en_US.UTF-8]: '
     prompt TIMEZONE 'Timezone (example: Asia/Tokyo): '
     prompt KEYMAP 'Keymap (example: us): '
   fi
@@ -120,7 +121,7 @@ configure_system() {
   fi
 
   locale_re=${LOCALE//./\\.}
-  sed -i "s/^#${locale_re} UTF-8\$/${LOCALE} UTF-8/" /etc/locale.gen
+  sed -i -E "s/^#?(${locale_re})[[:space:]]+UTF-8[[:space:]]*$/${LOCALE} UTF-8/" /etc/locale.gen
   grep -qxF "${LOCALE} UTF-8" /etc/locale.gen || die "Failed to enable locale: ${LOCALE}"
   printf 'LANG=%s\n' "$LOCALE" >/etc/locale.conf
   locale-gen

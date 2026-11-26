@@ -198,9 +198,10 @@ ask_inputs() {
   prompt_secret ROOT_PASSWORD 'Root password: '
   prompt_secret USER_PASSWORD "Password for ${USER_NAME}: "
 
-  prompt LOCALE 'Locale (example: en_US.UTF-8): '
+  prompt LOCALE 'Locale [en_US.UTF-8]: '
+  [[ -n "$LOCALE" ]] || LOCALE=en_US.UTF-8
   [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "Invalid locale."
-  grep -Eq "^#?${LOCALE//./\\.} UTF-8$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
+  grep -Eq "^#?${LOCALE//./\\.}[[:space:]]+UTF-8[[:space:]]*$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
 
   prompt TIMEZONE 'Timezone (example: Asia/Tokyo): '
   [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "Timezone not found: ${TIMEZONE}"
