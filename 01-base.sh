@@ -83,6 +83,28 @@ prompt_secret() {
   done
 }
 
+locale_is_known() {
+  local file line name charset
+  for file in /etc/locale.gen /usr/share/i18n/SUPPORTED; do
+    [[ -r "$file" ]] || continue
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line=${line%$'\r'}
+      line=${line#"${line%%[![:space:]]*}"}
+      [[ -n "$line" ]] || continue
+      if [[ "$line" == \#* ]]; then
+        line=${line#\#}
+        line=${line#"${line%%[![:space:]]*}"}
+      fi
+      [[ -n "$line" && "$line" != \#* ]] || continue
+      read -r name charset <<<"$line"
+      if [[ "$name" == "$LOCALE" && "$charset" == UTF-8 ]]; then
+        return 0
+      fi
+    done <"$file"
+  done
+  return 1
+}
+
 on_disk() {
   local source=$1 disk=$2 pk
   [[ "$source" == "$disk" ]] && return 0
@@ -199,9 +221,12 @@ ask_inputs() {
   prompt_secret USER_PASSWORD "Password for ${USER_NAME}: "
 
   prompt LOCALE 'Locale [en_US.UTF-8]: '
-  [[ -n "$LOCALE" ]] || LOCALE=en_US.UTF-8
+  LOCALE=${LOCALE//[[:space:]]/}
+  if [[ -z "$LOCALE" ]]; then
+    LOCALE=en_US.UTF-8
+  fi
   [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "Invalid locale."
-  grep -Eq "^#?${LOCALE//./\\.}[[:space:]]+UTF-8[[:space:]]*$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
+  locale_is_known || die "Locale is not listed in locale.gen: ${LOCALE}"
 
   prompt TIMEZONE 'Timezone (example: Asia/Tokyo): '
   [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "Timezone not found: ${TIMEZONE}"

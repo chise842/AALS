@@ -50,6 +50,28 @@ prompt_secret() {
   done
 }
 
+locale_is_known() {
+  local file line name charset
+  for file in /etc/locale.gen /usr/share/i18n/SUPPORTED; do
+    [[ -r "$file" ]] || continue
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line=${line%$'\r'}
+      line=${line#"${line%%[![:space:]]*}"}
+      [[ -n "$line" ]] || continue
+      if [[ "$line" == \#* ]]; then
+        line=${line#\#}
+        line=${line#"${line%%[![:space:]]*}"}
+      fi
+      [[ -n "$line" && "$line" != \#* ]] || continue
+      read -r name charset <<<"$line"
+      if [[ "$name" == "$LOCALE" && "$charset" == UTF-8 ]]; then
+        return 0
+      fi
+    done <"$file"
+  done
+  return 1
+}
+
 has_mount_option() {
   local mountpoint=$1 option=$2 options
   options=$(findmnt -no OPTIONS "$mountpoint" || true)
@@ -78,9 +100,12 @@ validate_settings() {
   esac
   [[ -n "$ROOT_PASSWORD" && "$ROOT_PASSWORD" != *$'\n'* ]] || die "Invalid root password."
   [[ -n "$USER_PASSWORD" && "$USER_PASSWORD" != *$'\n'* ]] || die "Invalid user password."
-  [[ -n "$LOCALE" ]] || LOCALE=en_US.UTF-8
+  LOCALE=${LOCALE//[[:space:]]/}
+  if [[ -z "$LOCALE" ]]; then
+    LOCALE=en_US.UTF-8
+  fi
   [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "Invalid locale."
-  grep -Eq "^#?${LOCALE//./\\.}[[:space:]]+UTF-8[[:space:]]*$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
+  locale_is_known || die "Locale is not listed in locale.gen: ${LOCALE}"
   [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "Timezone not found: ${TIMEZONE}"
   [[ "$KEYMAP" =~ ^[A-Za-z0-9_-]+$ ]] || die "Invalid keymap."
   keymap_path=$(find /usr/share/kbd/keymaps -type f -name "${KEYMAP}.map.gz" -print -quit)
@@ -121,7 +146,10 @@ configure_system() {
   fi
 
   locale_re=${LOCALE//./\\.}
-  sed -i -E "s/^#?(${locale_re})[[:space:]]+UTF-8[[:space:]]*$/${LOCALE} UTF-8/" /etc/locale.gen
+  sed -i -E "s/^#?[[:space:]]*(${locale_re})[[:space:]]+UTF-8[[:space:]]*$/${LOCALE} UTF-8/" /etc/locale.gen
+  if ! grep -qxF "${LOCALE} UTF-8" /etc/locale.gen; then
+    printf '%s UTF-8\n' "$LOCALE" >>/etc/locale.gen
+  fi
   grep -qxF "${LOCALE} UTF-8" /etc/locale.gen || die "Failed to enable locale: ${LOCALE}"
   printf 'LANG=%s\n' "$LOCALE" >/etc/locale.conf
   locale-gen
