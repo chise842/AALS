@@ -5,7 +5,7 @@
 # CachyOS リポジトリ、paru、デスクトップは起動後の 03-desktop.sh。
 # /root/aals/install.env があればそれを使い、成功時に削除する。無ければ入力を求める。
 if [ -z "${BASH_VERSION:-}" ]; then
-  printf 'bash で実行してください。\n' >&2
+  printf 'Run this script with bash.\n' >&2
   exit 1
 fi
 
@@ -40,13 +40,13 @@ prompt_secret() {
   while true; do
     read -rs -p "$text" first
     printf '\n' >&2
-    read -rs -p 'もう一度入力: ' second
+    read -rs -p 'Enter it again: ' second
     printf '\n' >&2
     if [[ -n "$first" && "$first" == "$second" ]]; then
       printf -v "$var" '%s' "$first"
       return 0
     fi
-    printf '一致しないか、空です。\n' >&2
+    printf 'Entries do not match, or are empty.\n' >&2
   done
 }
 
@@ -58,34 +58,34 @@ has_mount_option() {
 
 assert_environment() {
   local root_type boot_type
-  [[ "$(id -u)" -eq 0 ]] || die "root で実行してください。"
+  [[ "$(id -u)" -eq 0 ]] || die "Run as root."
   root_type=$(findmnt -no FSTYPE / || true)
-  [[ "$root_type" == btrfs ]] || die "新システムの Btrfs ルートで実行してください。Live ISO では 01-base.sh を使ってください。"
-  has_mount_option / subvol=@ || has_mount_option / subvol=/@ || die "ルートがサブボリューム @ ではありません。"
-  has_mount_option /home subvol=@home || has_mount_option /home subvol=/@home || die "/home がサブボリューム @home ではありません。"
-  has_mount_option /.snapshots subvol=@snapshots || has_mount_option /.snapshots subvol=/@snapshots || die "/.snapshots がサブボリューム @snapshots ではありません。"
+  [[ "$root_type" == btrfs ]] || die "Run this on the new Btrfs root. On the live ISO, use 01-base.sh."
+  has_mount_option / subvol=@ || has_mount_option / subvol=/@ || die "The root is not subvolume @."
+  has_mount_option /home subvol=@home || has_mount_option /home subvol=/@home || die "/home is not subvolume @home."
+  has_mount_option /.snapshots subvol=@snapshots || has_mount_option /.snapshots subvol=/@snapshots || die "/.snapshots is not subvolume @snapshots."
   boot_type=$(findmnt -no FSTYPE /boot || true)
-  [[ "$boot_type" == vfat ]] || die "/boot が ESP（vfat）ではありません。"
-  [[ -x "$DESKTOP_SCRIPT" ]] || die "03-desktop.sh がありません: ${DESKTOP_SCRIPT}"
+  [[ "$boot_type" == vfat ]] || die "/boot is not the ESP (vfat)."
+  [[ -x "$DESKTOP_SCRIPT" ]] || die "03-desktop.sh is missing: ${DESKTOP_SCRIPT}"
 }
 
 validate_settings() {
   local keymap_path
-  [[ "$HOST_NAME" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] || die "ホスト名が不正です。"
-  [[ "$USER_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "ユーザー名が不正です。"
+  [[ "$HOST_NAME" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]] || die "Invalid hostname."
+  [[ "$USER_NAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "Invalid username."
   case "$USER_NAME" in
-    root | greeter) die "このユーザー名は使えません。" ;;
+    root | greeter) die "This username is not allowed." ;;
   esac
-  [[ -n "$ROOT_PASSWORD" && "$ROOT_PASSWORD" != *$'\n'* ]] || die "root のパスワードが不正です。"
-  [[ -n "$USER_PASSWORD" && "$USER_PASSWORD" != *$'\n'* ]] || die "ユーザーのパスワードが不正です。"
-  [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "ロケールの指定が不正です。"
-  grep -Eq "^#?${LOCALE//./\\.} UTF-8$" /etc/locale.gen || die "locale.gen に無いロケールです: ${LOCALE}"
-  [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "タイムゾーンが見つかりません: ${TIMEZONE}"
-  [[ "$KEYMAP" =~ ^[A-Za-z0-9_-]+$ ]] || die "キーマップの指定が不正です。"
+  [[ -n "$ROOT_PASSWORD" && "$ROOT_PASSWORD" != *$'\n'* ]] || die "Invalid root password."
+  [[ -n "$USER_PASSWORD" && "$USER_PASSWORD" != *$'\n'* ]] || die "Invalid user password."
+  [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "Invalid locale."
+  grep -Eq "^#?${LOCALE//./\\.} UTF-8$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
+  [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "Timezone not found: ${TIMEZONE}"
+  [[ "$KEYMAP" =~ ^[A-Za-z0-9_-]+$ ]] || die "Invalid keymap."
   keymap_path=$(find /usr/share/kbd/keymaps -type f -name "${KEYMAP}.map.gz" -print -quit)
-  [[ -n "$keymap_path" ]] || die "キーマップが見つかりません: ${KEYMAP}"
-  [[ "$CPU" == intel || "$CPU" == amd ]] || die "CPU は intel または amd です。"
-  [[ "$GPU" == nvidia || "$GPU" == amd ]] || die "GPU は nvidia または amd です。"
+  [[ -n "$keymap_path" ]] || die "Keymap not found: ${KEYMAP}"
+  [[ "$CPU" == intel || "$CPU" == amd ]] || die "CPU must be intel or amd."
+  [[ "$GPU" == nvidia || "$GPU" == amd ]] || die "GPU must be nvidia or amd."
 }
 
 load_or_ask_settings() {
@@ -93,35 +93,35 @@ load_or_ask_settings() {
     # shellcheck disable=SC1090
     source "$ENV_FILE"
   else
-    prompt HOST_NAME 'ホスト名: '
-    prompt USER_NAME 'ユーザー名: '
-    prompt_secret ROOT_PASSWORD 'root のパスワード: '
-    prompt_secret USER_PASSWORD "${USER_NAME} のパスワード: "
-    prompt LOCALE 'ロケール（例: en_US.UTF-8）: '
-    prompt TIMEZONE 'タイムゾーン（例: Asia/Tokyo）: '
-    prompt KEYMAP 'キーマップ（例: us）: '
+    prompt HOST_NAME 'Hostname: '
+    prompt USER_NAME 'Username: '
+    prompt_secret ROOT_PASSWORD 'Root password: '
+    prompt_secret USER_PASSWORD "Password for ${USER_NAME}: "
+    prompt LOCALE 'Locale (example: en_US.UTF-8): '
+    prompt TIMEZONE 'Timezone (example: Asia/Tokyo): '
+    prompt KEYMAP 'Keymap (example: us): '
   fi
   if [[ -z "$CPU" ]]; then
-    prompt CPU 'CPU（intel / amd）: '
+    prompt CPU 'CPU (intel / amd): '
   fi
   if [[ -z "$GPU" ]]; then
-    prompt GPU 'GPU（nvidia / amd）: '
+    prompt GPU 'GPU (nvidia / amd): '
   fi
   validate_settings
 }
 
 configure_system() {
   local locale_re root_uuid user_shell=/bin/bash
-  printf '新システム内の root として設定しています。\n'
+  printf 'Configuring the new system as root.\n'
 
   ln -sfn "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
   if ! hwclock --systohc; then
-    printf 'Warning: ハードウェア時計を設定できませんでした。\n' >&2
+    printf 'Warning: failed to set the hardware clock.\n' >&2
   fi
 
   locale_re=${LOCALE//./\\.}
   sed -i "s/^#${locale_re} UTF-8\$/${LOCALE} UTF-8/" /etc/locale.gen
-  grep -qxF "${LOCALE} UTF-8" /etc/locale.gen || die "ロケールを有効にできません: ${LOCALE}"
+  grep -qxF "${LOCALE} UTF-8" /etc/locale.gen || die "Failed to enable locale: ${LOCALE}"
   printf 'LANG=%s\n' "$LOCALE" >/etc/locale.conf
   locale-gen
 
@@ -162,13 +162,13 @@ EOF
 
   systemd-machine-id-setup
   root_uuid=$(findmnt -no UUID /)
-  [[ -n "$root_uuid" ]] || die "ルートの UUID を取得できません。"
+  [[ -n "$root_uuid" ]] || die "Failed to read the root UUID."
   deploy_limine "$root_uuid"
   configure_resolved_symlink
 }
 
 configure_network() {
-  printf 'systemd-networkd、iwd、systemd-resolved を有効にしています。\n'
+  printf 'Enabling systemd-networkd, iwd, and systemd-resolved.\n'
   install -d -m 755 /etc/iwd /etc/systemd/network
   cat >/etc/iwd/main.conf <<'EOF'
 [General]
@@ -194,7 +194,7 @@ EOF
 }
 
 configure_snapper() {
-  printf 'Snapper を設定しています。\n'
+  printf 'Configuring Snapper.\n'
   if [[ ! -f /etc/snapper/configs/root ]]; then
     if findmnt -M /.snapshots >/dev/null; then
       umount /.snapshots
@@ -211,13 +211,13 @@ configure_snapper() {
     mkdir -m 750 /.snapshots
     mount /.snapshots
   fi
-  findmnt -M /.snapshots >/dev/null || die "/.snapshots がマウントされていません。"
+  findmnt -M /.snapshots >/dev/null || die "/.snapshots is not mounted."
   chmod 750 /.snapshots
   systemctl enable snapper-timeline.timer snapper-cleanup.timer
 }
 
 configure_zram() {
-  printf 'ZRAM を設定しています。\n'
+  printf 'Configuring ZRAM.\n'
   install -d -m 755 /etc/systemd
   cat >/etc/systemd/zram-generator.conf <<'EOF'
 [zram0]
@@ -240,10 +240,10 @@ ensure_btrfs_in_initramfs() {
   if initramfs_has_btrfs "$image"; then
     return 0
   fi
-  grep -Eq '^MODULES=\([[:space:]]*\)$' /etc/mkinitcpio.conf || die "initramfs に btrfs モジュールがありません。"
+  grep -Eq '^MODULES=\([[:space:]]*\)$' /etc/mkinitcpio.conf || die "The initramfs has no btrfs module."
   sed -i -E 's/^MODULES=\([[:space:]]*\)$/MODULES=(btrfs)/' /etc/mkinitcpio.conf
   mkinitcpio -P
-  initramfs_has_btrfs "$image" || die "initramfs に btrfs モジュールがありません。"
+  initramfs_has_btrfs "$image" || die "The initramfs has no btrfs module."
 }
 
 initramfs_has_btrfs() {
@@ -255,11 +255,11 @@ initramfs_has_btrfs() {
 
 deploy_limine() {
   local root_uuid=$1 efi=/usr/share/limine/BOOTX64.EFI cmdline machine_id
-  printf 'Limine を配置しています。\n'
-  [[ -f "$efi" ]] || die "Limine の EFI バイナリがありません: ${efi}"
-  [[ -f /boot/vmlinuz-linux && -f /boot/initramfs-linux.img && -f /boot/initramfs-linux-fallback.img ]] || die "linux のカーネルまたは initramfs が /boot にありません。"
+  printf 'Installing Limine.\n'
+  [[ -f "$efi" ]] || die "Limine EFI binary is missing: ${efi}"
+  [[ -f /boot/vmlinuz-linux && -f /boot/initramfs-linux.img && -f /boot/initramfs-linux-fallback.img ]] || die "The linux kernel or initramfs is missing from /boot."
   machine_id=$(tr -d '[:space:]' </etc/machine-id)
-  [[ "$machine_id" =~ ^[a-f0-9]{32}$ ]] || die "machine-id が不正です。"
+  [[ "$machine_id" =~ ^[a-f0-9]{32}$ ]] || die "Invalid machine-id."
   cmdline="root=UUID=${root_uuid} rw rootflags=subvol=@"
 
   install -Dm644 "$efi" /boot/EFI/BOOT/BOOTX64.EFI
@@ -293,8 +293,8 @@ main() {
   rm -f "$ENV_FILE"
   unset ROOT_PASSWORD USER_PASSWORD
   sync
-  printf 'ベース OS の設定が完了しました。ZRAM は再起動後に有効になります。\n'
-  printf '有線は DHCP で接続します。無線は iwctl で接続してから、一般ユーザーで %s を実行してください。\n' "$DESKTOP_SCRIPT"
+  printf 'Base system setup is complete. ZRAM is enabled after reboot.\n'
+  printf 'Ethernet uses DHCP. For Wi-Fi, connect with iwctl, then run %s as the regular user.\n' "$DESKTOP_SCRIPT"
 }
 
 main "$@"
