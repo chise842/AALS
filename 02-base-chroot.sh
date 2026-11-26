@@ -50,26 +50,15 @@ prompt_secret() {
   done
 }
 
-locale_is_known() {
-  local file line name charset
-  for file in /etc/locale.gen /usr/share/i18n/SUPPORTED; do
-    [[ -r "$file" ]] || continue
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      line=${line%$'\r'}
-      line=${line#"${line%%[![:space:]]*}"}
-      [[ -n "$line" ]] || continue
-      if [[ "$line" == \#* ]]; then
-        line=${line#\#}
-        line=${line#"${line%%[![:space:]]*}"}
-      fi
-      [[ -n "$line" && "$line" != \#* ]] || continue
-      read -r name charset <<<"$line"
-      if [[ "$name" == "$LOCALE" && "$charset" == UTF-8 ]]; then
-        return 0
-      fi
-    done <"$file"
+ask_locale() {
+  while true; do
+    prompt LOCALE 'Locale (example: en_US.UTF-8): '
+    LOCALE=${LOCALE//[[:space:]]/}
+    if [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+      return 0
+    fi
+    printf 'Enter a locale such as en_US.UTF-8.\n' >&2
   done
-  return 1
 }
 
 has_mount_option() {
@@ -101,11 +90,9 @@ validate_settings() {
   [[ -n "$ROOT_PASSWORD" && "$ROOT_PASSWORD" != *$'\n'* ]] || die "Invalid root password."
   [[ -n "$USER_PASSWORD" && "$USER_PASSWORD" != *$'\n'* ]] || die "Invalid user password."
   LOCALE=${LOCALE//[[:space:]]/}
-  if [[ -z "$LOCALE" ]]; then
-    LOCALE=en_US.UTF-8
+  if [[ ! "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+    ask_locale
   fi
-  [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "Invalid locale."
-  locale_is_known || die "Locale is not listed in locale.gen: ${LOCALE}"
   [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "Timezone not found: ${TIMEZONE}"
   [[ "$KEYMAP" =~ ^[A-Za-z0-9_-]+$ ]] || die "Invalid keymap."
   keymap_path=$(find /usr/share/kbd/keymaps -type f -name "${KEYMAP}.map.gz" -print -quit)
@@ -123,7 +110,7 @@ load_or_ask_settings() {
     prompt USER_NAME 'Username: '
     prompt_secret ROOT_PASSWORD 'Root password: '
     prompt_secret USER_PASSWORD "Password for ${USER_NAME}: "
-    prompt LOCALE 'Locale [en_US.UTF-8]: '
+    ask_locale
     prompt TIMEZONE 'Timezone (example: Asia/Tokyo): '
     prompt KEYMAP 'Keymap (example: us): '
   fi
