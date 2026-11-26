@@ -50,6 +50,17 @@ prompt_secret() {
   done
 }
 
+ask_locale() {
+  while true; do
+    prompt LOCALE 'Locale (example: en_US.UTF-8): '
+    LOCALE=${LOCALE//[[:space:]]/}
+    if [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+      return 0
+    fi
+    printf 'Enter a locale such as en_US.UTF-8.\n' >&2
+  done
+}
+
 has_mount_option() {
   local mountpoint=$1 option=$2 options
   options=$(findmnt -no OPTIONS "$mountpoint" || true)
@@ -78,8 +89,10 @@ validate_settings() {
   esac
   [[ -n "$ROOT_PASSWORD" && "$ROOT_PASSWORD" != *$'\n'* ]] || die "Invalid root password."
   [[ -n "$USER_PASSWORD" && "$USER_PASSWORD" != *$'\n'* ]] || die "Invalid user password."
-  [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "Invalid locale."
-  grep -Eq "^#?${LOCALE//./\\.} UTF-8$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
+  LOCALE=${LOCALE//[[:space:]]/}
+  if [[ ! "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+    ask_locale
+  fi
   [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "Timezone not found: ${TIMEZONE}"
   [[ "$KEYMAP" =~ ^[A-Za-z0-9_-]+$ ]] || die "Invalid keymap."
   keymap_path=$(find /usr/share/kbd/keymaps -type f -name "${KEYMAP}.map.gz" -print -quit)
@@ -97,7 +110,7 @@ load_or_ask_settings() {
     prompt USER_NAME 'Username: '
     prompt_secret ROOT_PASSWORD 'Root password: '
     prompt_secret USER_PASSWORD "Password for ${USER_NAME}: "
-    prompt LOCALE 'Locale (example: en_US.UTF-8): '
+    ask_locale
     prompt TIMEZONE 'Timezone (example: Asia/Tokyo): '
     prompt KEYMAP 'Keymap (example: us): '
   fi
@@ -120,7 +133,10 @@ configure_system() {
   fi
 
   locale_re=${LOCALE//./\\.}
-  sed -i "s/^#${locale_re} UTF-8\$/${LOCALE} UTF-8/" /etc/locale.gen
+  sed -i -E "s/^#?[[:space:]]*(${locale_re})[[:space:]]+UTF-8[[:space:]]*$/${LOCALE} UTF-8/" /etc/locale.gen
+  if ! grep -qxF "${LOCALE} UTF-8" /etc/locale.gen; then
+    printf '%s UTF-8\n' "$LOCALE" >>/etc/locale.gen
+  fi
   grep -qxF "${LOCALE} UTF-8" /etc/locale.gen || die "Failed to enable locale: ${LOCALE}"
   printf 'LANG=%s\n' "$LOCALE" >/etc/locale.conf
   locale-gen

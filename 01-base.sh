@@ -83,6 +83,17 @@ prompt_secret() {
   done
 }
 
+ask_locale() {
+  while true; do
+    prompt LOCALE 'Locale (example: en_US.UTF-8): '
+    LOCALE=${LOCALE//[[:space:]]/}
+    if [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+      return 0
+    fi
+    printf 'Enter a locale such as en_US.UTF-8.\n' >&2
+  done
+}
+
 on_disk() {
   local source=$1 disk=$2 pk
   [[ "$source" == "$disk" ]] && return 0
@@ -198,9 +209,7 @@ ask_inputs() {
   prompt_secret ROOT_PASSWORD 'Root password: '
   prompt_secret USER_PASSWORD "Password for ${USER_NAME}: "
 
-  prompt LOCALE 'Locale (example: en_US.UTF-8): '
-  [[ "$LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]] || die "Invalid locale."
-  grep -Eq "^#?${LOCALE//./\\.} UTF-8$" /etc/locale.gen || die "Locale is not listed in locale.gen: ${LOCALE}"
+  ask_locale
 
   prompt TIMEZONE 'Timezone (example: Asia/Tokyo): '
   [[ "$TIMEZONE" != *..* && "$TIMEZONE" != /* && -f "/usr/share/zoneinfo/${TIMEZONE}" ]] || die "Timezone not found: ${TIMEZONE}"
